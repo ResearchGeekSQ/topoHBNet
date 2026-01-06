@@ -7,7 +7,7 @@ and TopoEmbedX libraries.
 """
 
 __version__ = "0.1.0"
-__author__ = "SIQI"
+__author__ = "SIQI TANG"
 
 from .io.trajectory_parser import TrajectoryParser
 from .detection.hbond_detector import HBondDetector
