@@ -190,11 +190,18 @@ class HBondComplexBuilder:
         tnx.SimplicialComplex
             Simplicial complex of the H-bond network
         """
-        # Get unique oxygen nodes involved in H-bonds
-        o_indices = set()
-        for hb in hbonds:
-            o_indices.add(hb.donor_o_idx)
-            o_indices.add(hb.acceptor_o_idx)
+        # Identify all water molecules from the frame for node representation
+        detector = HBondDetector()
+        water_mols = detector.identify_water_molecules(frame)
+        o_indices = [w.o_idx for w in water_mols]
+        
+        if not o_indices:
+            # Fallback to oxygens involved in H-bonds if no water molecules identified
+            o_indices = set()
+            for hb in hbonds:
+                o_indices.add(hb.donor_o_idx)
+                o_indices.add(hb.acceptor_o_idx)
+            o_indices = list(o_indices)
         
         # Get node positions
         node_positions = {

@@ -50,262 +50,276 @@ def check_dependencies():
         raise ImportError("TopoNetX is required. Install with: pip install toponetx")
 
 
-class GNNLayer(nn.Module):
-    """
-    Simple Graph Neural Network layer with message passing.
-    
-    Implements basic message passing: h_v' = σ(W_1 h_v + W_2 Σ_u h_u)
-    """
-    
-    def __init__(self, in_channels: int, out_channels: int):
-        super().__init__()
-        self.self_linear = nn.Linear(in_channels, out_channels)
-        self.neighbor_linear = nn.Linear(in_channels, out_channels)
-    
-    def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
+if HAS_TORCH:
+    class GNNLayer(nn.Module):
         """
-        Forward pass.
+        Simple Graph Neural Network layer with message passing.
+        
+        Implements basic message passing: h_v' = σ(W_1 h_v + W_2 Σ_u h_u)
+        """
+        
+        def __init__(self, in_channels: int, out_channels: int):
+            super().__init__()
+            self.self_linear = nn.Linear(in_channels, out_channels)
+            self.neighbor_linear = nn.Linear(in_channels, out_channels)
+        
+        def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
+            """
+            Forward pass.
+            
+            Parameters
+            ----------
+            x : torch.Tensor
+                Node features of shape (n_nodes, in_channels)
+            adj : torch.Tensor
+                Adjacency matrix (sparse or dense)
+            """
+            # Self transformation
+            self_out = self.self_linear(x)
+            
+            # Neighbor aggregation
+            if adj.is_sparse:
+                neighbor_agg = torch.sparse.mm(adj, x)
+            else:
+                neighbor_agg = torch.mm(adj, x)
+            neighbor_out = self.neighbor_linear(neighbor_agg)
+            
+            return F.relu(self_out + neighbor_out)
+
+
+    class GNNEncoder(nn.Module):
+        """
+        Multi-layer GNN encoder for node embeddings.
+        """
+        
+        def __init__(
+            self, 
+            in_channels: int, 
+            hidden_channels: int, 
+            out_channels: int,
+            n_layers: int = 2,
+            dropout: float = 0.1
+        ):
+            super().__init__()
+            
+            self.layers = nn.ModuleList()
+            
+            # First layer
+            self.layers.append(GNNLayer(in_channels, hidden_channels))
+            
+            # Hidden layers
+            for _ in range(n_layers - 2):
+                self.layers.append(GNNLayer(hidden_channels, hidden_channels))
+            
+            # Last layer
+            if n_layers > 1:
+                self.layers.append(GNNLayer(hidden_channels, out_channels))
+            
+            self.dropout = nn.Dropout(dropout)
+        
+        def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
+            for i, layer in enumerate(self.layers):
+                x = layer(x, adj)
+                if i < len(self.layers) - 1:
+                    x = self.dropout(x)
+            return x
+else:
+    class GNNLayer:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for GNNLayer.")
+            
+    class GNNEncoder:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for GNNEncoder.")
+
+
+if HAS_TORCH:
+    class GNNEnhancedTNN(nn.Module):
+        """
+        GNN-Enhanced Topological Neural Network.
+        
+        Combines GNN (for graph-level features) with TNN (for simplicial features)
+        using a fusion strategy.
+        
+        Architecture Options:
+        - 'parallel': GNN and TNN run in parallel, features concatenated
+        - 'hierarchical': GNN output feeds into TNN
+        - 'residual': TNN with GNN residual connection
         
         Parameters
         ----------
-        x : torch.Tensor
-            Node features of shape (n_nodes, in_channels)
-        adj : torch.Tensor
-            Adjacency matrix (sparse or dense)
+        node_in_channels : int
+            Input features per node
+        edge_in_channels : int
+            Input features per edge (for TNN)
+        hidden_channels : int
+            Hidden layer dimension
+        out_channels : int
+            Output dimension
+        n_gnn_layers : int
+            Number of GNN layers
+        n_tnn_layers : int
+            Number of TNN (SAN) layers
+        fusion : str
+            Fusion strategy: 'parallel', 'hierarchical', or 'residual'
         """
-        # Self transformation
-        self_out = self.self_linear(x)
         
-        # Neighbor aggregation
-        if adj.is_sparse:
-            neighbor_agg = torch.sparse.mm(adj, x)
-        else:
-            neighbor_agg = torch.mm(adj, x)
-        neighbor_out = self.neighbor_linear(neighbor_agg)
-        
-        return F.relu(self_out + neighbor_out)
-
-
-class GNNEncoder(nn.Module):
-    """
-    Multi-layer GNN encoder for node embeddings.
-    """
-    
-    def __init__(
-        self, 
-        in_channels: int, 
-        hidden_channels: int, 
-        out_channels: int,
-        n_layers: int = 2,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-        
-        self.layers = nn.ModuleList()
-        
-        # First layer
-        self.layers.append(GNNLayer(in_channels, hidden_channels))
-        
-        # Hidden layers
-        for _ in range(n_layers - 2):
-            self.layers.append(GNNLayer(hidden_channels, hidden_channels))
-        
-        # Last layer
-        if n_layers > 1:
-            self.layers.append(GNNLayer(hidden_channels, out_channels))
-        
-        self.dropout = nn.Dropout(dropout)
-    
-    def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        for i, layer in enumerate(self.layers):
-            x = layer(x, adj)
-            if i < len(self.layers) - 1:
-                x = self.dropout(x)
-        return x
-
-
-class GNNEnhancedTNN(nn.Module):
-    """
-    GNN-Enhanced Topological Neural Network.
-    
-    Combines GNN (for graph-level features) with TNN (for simplicial features)
-    using a fusion strategy.
-    
-    Architecture Options:
-    - 'parallel': GNN and TNN run in parallel, features concatenated
-    - 'hierarchical': GNN output feeds into TNN
-    - 'residual': TNN with GNN residual connection
-    
-    Parameters
-    ----------
-    node_in_channels : int
-        Input features per node
-    edge_in_channels : int
-        Input features per edge (for TNN)
-    hidden_channels : int
-        Hidden layer dimension
-    out_channels : int
-        Output dimension
-    n_gnn_layers : int
-        Number of GNN layers
-    n_tnn_layers : int
-        Number of TNN (SAN) layers
-    fusion : str
-        Fusion strategy: 'parallel', 'hierarchical', or 'residual'
-    """
-    
-    def __init__(
-        self,
-        node_in_channels: int = 1,
-        edge_in_channels: int = 1,
-        hidden_channels: int = 32,
-        out_channels: int = 16,
-        n_gnn_layers: int = 2,
-        n_tnn_layers: int = 2,
-        fusion: str = 'parallel'
-    ):
-        check_dependencies()
-        super().__init__()
-        
-        self.fusion = fusion
-        self.hidden_channels = hidden_channels
-        
-        # GNN encoder for node features
-        self.gnn = GNNEncoder(
-            in_channels=node_in_channels,
-            hidden_channels=hidden_channels,
-            out_channels=hidden_channels,
-            n_layers=n_gnn_layers
-        )
-        
-        # TNN (SAN) for simplicial features
-        if HAS_TOPOMODELX and SAN is not None:
-            # Determine TNN input size based on fusion strategy
-            if fusion == 'hierarchical':
-                tnn_in = hidden_channels
-            else:
-                tnn_in = edge_in_channels
+        def __init__(
+            self,
+            node_in_channels: int = 1,
+            edge_in_channels: int = 1,
+            hidden_channels: int = 32,
+            out_channels: int = 16,
+            n_gnn_layers: int = 2,
+            n_tnn_layers: int = 2,
+            fusion: str = 'parallel'
+        ):
+            check_dependencies()
+            super().__init__()
             
-            self.tnn = SAN(
-                in_channels=tnn_in,
+            self.fusion = fusion
+            self.hidden_channels = hidden_channels
+            
+            # GNN encoder for node features
+            self.gnn = GNNEncoder(
+                in_channels=node_in_channels,
                 hidden_channels=hidden_channels,
-                n_layers=n_tnn_layers
+                out_channels=hidden_channels,
+                n_layers=n_gnn_layers
             )
-            self.has_tnn = True
-        else:
-            # Fallback: use MLP for edge processing
-            self.tnn = nn.Sequential(
-                nn.Linear(edge_in_channels, hidden_channels),
-                nn.ReLU(),
-                nn.Linear(hidden_channels, hidden_channels)
-            )
-            self.has_tnn = False
-        
-        # Fusion layer
-        if fusion == 'parallel':
-            # Concatenate GNN and TNN outputs
-            self.fusion_layer = nn.Linear(hidden_channels * 2, out_channels)
-        else:
-            self.fusion_layer = nn.Linear(hidden_channels, out_channels)
-        
-        # Graph-level predictor
-        self.graph_predictor = nn.Sequential(
-            nn.Linear(out_channels, out_channels),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(out_channels, 1)
-        )
-    
-    def forward(
-        self,
-        node_features: torch.Tensor,
-        edge_features: torch.Tensor,
-        adj: torch.Tensor,
-        laplacian_up: Optional[torch.Tensor] = None,
-        laplacian_down: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Forward pass.
-        
-        Parameters
-        ----------
-        node_features : torch.Tensor
-            Node features (n_nodes, node_in_channels)
-        edge_features : torch.Tensor
-            Edge features (n_edges, edge_in_channels)
-        adj : torch.Tensor
-            Adjacency matrix for GNN
-        laplacian_up : torch.Tensor, optional
-            Up Laplacian for TNN
-        laplacian_down : torch.Tensor, optional
-            Down Laplacian for TNN
             
-        Returns
-        -------
-        node_embeddings : torch.Tensor
-            Learned node representations
-        edge_embeddings : torch.Tensor
-            Learned edge representations
-        graph_pred : torch.Tensor
-            Graph-level prediction
-        """
-        # GNN: process node features
-        node_emb = self.gnn(node_features, adj)
-        
-        # TNN: process edge/simplicial features
-        if self.has_tnn and laplacian_up is not None and laplacian_down is not None:
-            if self.fusion == 'hierarchical':
-                # Convert node embeddings to edge features
-                edge_input = self._nodes_to_edges(node_emb, edge_features)
+            # TNN (SAN) for simplicial features
+            if HAS_TOPOMODELX and SAN is not None:
+                # Determine TNN input size based on fusion strategy
+                if fusion == 'hierarchical':
+                    tnn_in = hidden_channels
+                else:
+                    tnn_in = edge_in_channels
+                
+                self.tnn = SAN(
+                    in_channels=tnn_in,
+                    hidden_channels=hidden_channels,
+                    n_layers=n_tnn_layers
+                )
+                self.has_tnn = True
             else:
-                edge_input = edge_features
+                # Fallback: use MLP for edge processing
+                self.tnn = nn.Sequential(
+                    nn.Linear(edge_in_channels, hidden_channels),
+                    nn.ReLU(),
+                    nn.Linear(hidden_channels, hidden_channels)
+                )
+                self.has_tnn = False
             
-            edge_emb = self.tnn(edge_input, laplacian_up, laplacian_down)
-        else:
-            # Fallback for no TNN or missing Laplacians
-            edge_emb = self.tnn(edge_features)
+            # Fusion layer
+            if fusion == 'parallel':
+                # Concatenate GNN and TNN outputs
+                self.fusion_layer = nn.Linear(hidden_channels * 2, out_channels)
+            else:
+                self.fusion_layer = nn.Linear(hidden_channels, out_channels)
+            
+            # Graph-level predictor
+            self.graph_predictor = nn.Sequential(
+                nn.Linear(out_channels, out_channels),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(out_channels, 1)
+            )
         
-        # Fusion
-        if self.fusion == 'parallel':
-            # Global pool both node and edge embeddings
-            node_global = node_emb.mean(dim=0)
-            edge_global = edge_emb.mean(dim=0)
-            combined = torch.cat([node_global, edge_global], dim=-1)
-            graph_emb = self.fusion_layer(combined.unsqueeze(0))
-        elif self.fusion == 'residual':
-            # Add GNN features as residual
-            edge_emb = edge_emb + self._nodes_to_edges(node_emb, edge_features)
-            graph_emb = self.fusion_layer(edge_emb.mean(dim=0, keepdim=True))
-        else:  # hierarchical
-            graph_emb = self.fusion_layer(edge_emb.mean(dim=0, keepdim=True))
+        def forward(
+            self,
+            node_features: torch.Tensor,
+            edge_features: torch.Tensor,
+            adj: torch.Tensor,
+            laplacian_up: Optional[torch.Tensor] = None,
+            laplacian_down: Optional[torch.Tensor] = None
+        ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            """
+            Forward pass.
+            
+            Parameters
+            ----------
+            node_features : torch.Tensor
+                Node features (n_nodes, node_in_channels)
+            edge_features : torch.Tensor
+                Edge features (n_edges, edge_in_channels)
+            adj : torch.Tensor
+                Adjacency matrix for GNN
+            laplacian_up : torch.Tensor, optional
+                Up Laplacian for TNN
+            laplacian_down : torch.Tensor, optional
+                Down Laplacian for TNN
+                
+            Returns
+            -------
+            node_embeddings : torch.Tensor
+                Learned node representations
+            edge_embeddings : torch.Tensor
+                Learned edge representations
+            graph_pred : torch.Tensor
+                Graph-level prediction
+            """
+            # GNN: process node features
+            node_emb = self.gnn(node_features, adj)
+            
+            # TNN: process edge/simplicial features
+            if self.has_tnn and laplacian_up is not None and laplacian_down is not None:
+                if self.fusion == 'hierarchical':
+                    # Convert node embeddings to edge features
+                    edge_input = self._nodes_to_edges(node_emb, edge_features)
+                else:
+                    edge_input = edge_features
+                
+                edge_emb = self.tnn(edge_input, laplacian_up, laplacian_down)
+            else:
+                # Fallback for no TNN or missing Laplacians
+                edge_emb = self.tnn(edge_features)
+            
+            # Fusion
+            if self.fusion == 'parallel':
+                # Global pool both node and edge embeddings
+                node_global = node_emb.mean(dim=0)
+                edge_global = edge_emb.mean(dim=0)
+                combined = torch.cat([node_global, edge_global], dim=-1)
+                graph_emb = self.fusion_layer(combined.unsqueeze(0))
+            elif self.fusion == 'residual':
+                # Add GNN features as residual
+                edge_emb = edge_emb + self._nodes_to_edges(node_emb, edge_features)
+                graph_emb = self.fusion_layer(edge_emb.mean(dim=0, keepdim=True))
+            else:  # hierarchical
+                graph_emb = self.fusion_layer(edge_emb.mean(dim=0, keepdim=True))
+            
+            # Graph prediction
+            graph_pred = self.graph_predictor(graph_emb)
+            
+            return node_emb, edge_emb, graph_pred
         
-        # Graph prediction
-        graph_pred = self.graph_predictor(graph_emb)
-        
-        return node_emb, edge_emb, graph_pred
-    
-    def _nodes_to_edges(
-        self, 
-        node_emb: torch.Tensor, 
-        edge_features: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Convert node embeddings to edge features.
-        For now, just adds node global pool to edge features.
-        """
-        node_global = node_emb.mean(dim=0, keepdim=True)
-        # Expand to match edge dimension
-        n_edges = edge_features.shape[0]
-        node_expanded = node_global.expand(n_edges, -1)
-        
-        return node_expanded
+        def _nodes_to_edges(
+            self, 
+            node_emb: torch.Tensor, 
+            edge_features: torch.Tensor
+        ) -> torch.Tensor:
+            """
+            Convert node embeddings to edge features.
+            For now, just adds node global pool to edge features.
+            """
+            node_global = node_emb.mean(dim=0, keepdim=True)
+            # Expand to match edge dimension
+            n_edges = edge_features.shape[0]
+            node_expanded = node_global.expand(n_edges, -1)
+            
+            return node_expanded
+else:
+    class GNNEnhancedTNN:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for GNNEnhancedTNN.")
 
 
 def prepare_gnn_tnn_data(
     sc: "tnx.SimplicialComplex",
     node_features: Optional[np.ndarray] = None,
     edge_features: Optional[np.ndarray] = None
-) -> Dict[str, torch.Tensor]:
+) -> Dict[str, Any]:
     """
     Prepare data for GNN-Enhanced TNN.
     
@@ -341,8 +355,9 @@ def prepare_gnn_tnn_data(
     # Adjacency matrix
     try:
         adj = sc.adjacency_matrix(rank=0).tocoo()
+        adj_indices = np.vstack([adj.row, adj.col])
         adj_tensor = torch.sparse_coo_tensor(
-            torch.tensor([adj.row, adj.col]),
+            torch.from_numpy(adj_indices),
             torch.tensor(adj.data, dtype=torch.float32),
             size=(n_nodes, n_nodes)
         )
@@ -373,8 +388,8 @@ def prepare_gnn_tnn_data(
 
 
 def train_gnn_enhanced_tnn(
-    model: GNNEnhancedTNN,
-    train_data: List[Tuple[Dict[str, torch.Tensor], float]],
+    model: "GNNEnhancedTNN",
+    train_data: List[Tuple[Dict[str, Any], float]],
     n_epochs: int = 100,
     lr: float = 0.01,
     verbose: bool = True

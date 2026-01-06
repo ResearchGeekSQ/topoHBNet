@@ -44,105 +44,110 @@ def check_dependencies():
         raise ImportError("TopoModelX is required. Install with: pip install topomodelx")
 
 
-class HBondTNN(nn.Module):
-    """
-    Topological Neural Network for hydrogen bond network analysis.
-    
-    Uses Simplicial Attention Network (SAN) to learn representations
-    of H-bond networks on simplicial complexes.
-    
-    Parameters
-    ----------
-    in_channels : int
-        Number of input features per node
-    hidden_channels : int
-        Hidden layer dimension
-    out_channels : int
-        Output dimension
-    n_layers : int
-        Number of SAN layers
-    """
-    
-    def __init__(
-        self,
-        in_channels: int = 1,
-        hidden_channels: int = 32,
-        out_channels: int = 16,
-        n_layers: int = 2
-    ):
-        check_dependencies()
-        super().__init__()
-        
-        self.in_channels = in_channels
-        self.hidden_channels = hidden_channels
-        self.out_channels = out_channels
-        
-        # Input projection
-        self.input_proj = nn.Linear(in_channels, hidden_channels)
-        
-        # SAN layers
-        self.san = SAN(
-            in_channels=hidden_channels,
-            hidden_channels=hidden_channels,
-            n_layers=n_layers
-        )
-        
-        # Output projection
-        self.output_proj = nn.Linear(hidden_channels, out_channels)
-        
-        # For graph-level prediction
-        self.graph_proj = nn.Sequential(
-            nn.Linear(out_channels, out_channels),
-            nn.ReLU(),
-            nn.Linear(out_channels, 1)
-        )
-    
-    def forward(
-        self, 
-        x: torch.Tensor,
-        laplacian_up: torch.Tensor,
-        laplacian_down: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+if HAS_TORCH:
+    class HBondTNN(nn.Module):
         """
-        Forward pass.
+        Topological Neural Network for hydrogen bond network analysis.
+        
+        Uses Simplicial Attention Network (SAN) to learn representations
+        of H-bond networks on simplicial complexes.
         
         Parameters
         ----------
-        x : torch.Tensor
-            Node features of shape (n_edges, in_channels)
-        laplacian_up : torch.Tensor
-            Up Laplacian matrix
-        laplacian_down : torch.Tensor
-            Down Laplacian matrix
-            
-        Returns
-        -------
-        edge_features : torch.Tensor
-            Learned edge representations
-        graph_pred : torch.Tensor
-            Graph-level prediction
+        in_channels : int
+            Number of input features per node
+        hidden_channels : int
+            Hidden layer dimension
+        out_channels : int
+            Output dimension
+        n_layers : int
+            Number of SAN layers
         """
-        # Project input
-        x = self.input_proj(x)
-        x = F.relu(x)
         
-        # SAN message passing
-        x = self.san(x, laplacian_up, laplacian_down)
+        def __init__(
+            self,
+            in_channels: int = 1,
+            hidden_channels: int = 32,
+            out_channels: int = 16,
+            n_layers: int = 2
+        ):
+            check_dependencies()
+            super().__init__()
+            
+            self.in_channels = in_channels
+            self.hidden_channels = hidden_channels
+            self.out_channels = out_channels
+            
+            # Input projection
+            self.input_proj = nn.Linear(in_channels, hidden_channels)
+            
+            # SAN layers
+            self.san = SAN(
+                in_channels=hidden_channels,
+                hidden_channels=hidden_channels,
+                n_layers=n_layers
+            )
+            
+            # Output projection
+            self.output_proj = nn.Linear(hidden_channels, out_channels)
+            
+            # For graph-level prediction
+            self.graph_proj = nn.Sequential(
+                nn.Linear(out_channels, out_channels),
+                nn.ReLU(),
+                nn.Linear(out_channels, 1)
+            )
         
-        # Output projection
-        edge_features = self.output_proj(x)
-        
-        # Graph-level readout (mean pooling)
-        graph_emb = edge_features.mean(dim=0, keepdim=True)
-        graph_pred = self.graph_proj(graph_emb)
-        
-        return edge_features, graph_pred
+        def forward(
+            self, 
+            x: torch.Tensor,
+            laplacian_up: torch.Tensor,
+            laplacian_down: torch.Tensor
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
+            """
+            Forward pass.
+            
+            Parameters
+            ----------
+            x : torch.Tensor
+                Node features of shape (n_edges, in_channels)
+            laplacian_up : torch.Tensor
+                Up Laplacian matrix
+            laplacian_down : torch.Tensor
+                Down Laplacian matrix
+                
+            Returns
+            -------
+            edge_features : torch.Tensor
+                Learned edge representations
+            graph_pred : torch.Tensor
+                Graph-level prediction
+            """
+            # Project input
+            x = self.input_proj(x)
+            x = F.relu(x)
+            
+            # SAN message passing
+            x = self.san(x, laplacian_up, laplacian_down)
+            
+            # Output projection
+            edge_features = self.output_proj(x)
+            
+            # Graph-level readout (mean pooling)
+            graph_emb = edge_features.mean(dim=0, keepdim=True)
+            graph_pred = self.graph_proj(graph_emb)
+            
+            return edge_features, graph_pred
+else:
+    class HBondTNN:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for HBondTNN. Install with: pip install torch")
 
 
 def prepare_tnn_data(
     sc: "tnx.SimplicialComplex",
     node_features: Optional[np.ndarray] = None
-) -> Dict[str, torch.Tensor]:
+) -> Dict[str, Any]:
     """
     Prepare data for TNN from a simplicial complex.
     
@@ -213,8 +218,8 @@ def prepare_tnn_data(
 
 
 def train_tnn(
-    model: HBondTNN,
-    train_data: List[Tuple[Dict[str, torch.Tensor], float]],
+    model: "HBondTNN",
+    train_data: List[Tuple[Dict[str, Any], float]],
     n_epochs: int = 100,
     lr: float = 0.01,
     verbose: bool = True
@@ -280,89 +285,94 @@ def train_tnn(
     return history
 
 
-class HBondGNN(nn.Module):
-    """
-    Simple Graph Neural Network for H-bond networks.
-    
-    A lighter alternative to SAN when TopoModelX is not available.
-    Uses standard message passing on the graph structure.
-    
-    Parameters
-    ----------
-    in_channels : int
-        Input feature dimension
-    hidden_channels : int
-        Hidden layer dimension
-    out_channels : int
-        Output dimension
-    n_layers : int
-        Number of GNN layers
-    """
-    
-    def __init__(
-        self,
-        in_channels: int = 1,
-        hidden_channels: int = 32,
-        out_channels: int = 16,
-        n_layers: int = 2
-    ):
-        if not HAS_TORCH:
-            raise ImportError("PyTorch is required")
-        
-        super().__init__()
-        
-        self.layers = nn.ModuleList()
-        
-        # Input layer
-        self.layers.append(nn.Linear(in_channels, hidden_channels))
-        
-        # Hidden layers
-        for _ in range(n_layers - 1):
-            self.layers.append(nn.Linear(hidden_channels, hidden_channels))
-        
-        # Output layer
-        self.out_layer = nn.Linear(hidden_channels, out_channels)
-        
-        # Graph prediction
-        self.graph_pred = nn.Linear(out_channels, 1)
-    
-    def forward(
-        self, 
-        x: torch.Tensor, 
-        adj: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+if HAS_TORCH:
+    class HBondGNN(nn.Module):
         """
-        Forward pass.
+        Simple Graph Neural Network for H-bond networks.
+        
+        A lighter alternative to SAN when TopoModelX is not available.
+        Uses standard message passing on the graph structure.
         
         Parameters
         ----------
-        x : torch.Tensor
-            Node features
-        adj : torch.Tensor, optional
-            Adjacency matrix (sparse or dense)
-            
-        Returns
-        -------
-        node_features : torch.Tensor
-            Learned node representations
-        graph_pred : torch.Tensor
-            Graph-level prediction
+        in_channels : int
+            Input feature dimension
+        hidden_channels : int
+            Hidden layer dimension
+        out_channels : int
+            Output dimension
+        n_layers : int
+            Number of GNN layers
         """
-        for layer in self.layers:
-            x = layer(x)
-            x = F.relu(x)
+        
+        def __init__(
+            self,
+            in_channels: int = 1,
+            hidden_channels: int = 32,
+            out_channels: int = 16,
+            n_layers: int = 2
+        ):
+            if not HAS_TORCH:
+                raise ImportError("PyTorch is required")
             
-            # Message passing with adjacency if provided
-            if adj is not None:
-                if adj.is_sparse:
-                    x = torch.sparse.mm(adj, x) + x
-                else:
-                    x = torch.mm(adj, x) + x
+            super().__init__()
+            
+            self.layers = nn.ModuleList()
+            
+            # Input layer
+            self.layers.append(nn.Linear(in_channels, hidden_channels))
+            
+            # Hidden layers
+            for _ in range(n_layers - 1):
+                self.layers.append(nn.Linear(hidden_channels, hidden_channels))
+            
+            # Output layer
+            self.out_layer = nn.Linear(hidden_channels, out_channels)
+            
+            # Graph prediction
+            self.graph_pred = nn.Linear(out_channels, 1)
         
-        node_features = self.out_layer(x)
-        
-        # Graph-level readout
-        graph_emb = node_features.mean(dim=0, keepdim=True)
-        graph_pred = self.graph_pred(graph_emb)
-        
-        return node_features, graph_pred
+        def forward(
+            self, 
+            x: torch.Tensor, 
+            adj: Optional[torch.Tensor] = None
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
+            """
+            Forward pass.
+            
+            Parameters
+            ----------
+            x : torch.Tensor
+                Node features
+            adj : torch.Tensor, optional
+                Adjacency matrix (sparse or dense)
+                
+            Returns
+            -------
+            node_features : torch.Tensor
+                Learned node representations
+            graph_pred : torch.Tensor
+                Graph-level prediction
+            """
+            for layer in self.layers:
+                x = layer(x)
+                x = F.relu(x)
+                
+                # Message passing with adjacency if provided
+                if adj is not None:
+                    if adj.is_sparse:
+                        x = torch.sparse.mm(adj, x) + x
+                    else:
+                        x = torch.mm(adj, x) + x
+            
+            node_features = self.out_layer(x)
+            
+            # Graph-level readout
+            graph_emb = node_features.mean(dim=0, keepdim=True)
+            graph_pred = self.graph_pred(graph_emb)
+            
+            return node_features, graph_pred
+else:
+    class HBondGNN:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for HBondGNN. Install with: pip install torch")
