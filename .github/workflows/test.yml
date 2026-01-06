@@ -1,0 +1,64 @@
+# GitHub Actions workflow for testing the hbond-topology package
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install core dependencies
+        run: uv pip install --system -e .
+
+      - name: Test import
+        run: |
+          python -c "from hbond_topology.io.trajectory_parser import TrajectoryParser; print('TrajectoryParser OK')"
+          python -c "from hbond_topology.detection.hbond_detector import HBondDetector; print('HBondDetector OK')"
+          python -c "from hbond_topology.topology.complex_builder import HBondComplexBuilder; print('HBondComplexBuilder OK')"
+          python -c "from hbond_topology.topology.invariants import TopologicalInvariants; print('TopologicalInvariants OK')"
+          python -c "from hbond_topology.analysis.dynamics import DynamicsAnalyzer; print('DynamicsAnalyzer OK')"
+          python -c "from hbond_topology.analysis.visualization import TopologyVisualizer; print('TopologyVisualizer OK')"
+
+      - name: Test CLI help
+        run: python run_analysis.py --help
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff check
+        run: ruff check hbond_topology/ --ignore E501
+        continue-on-error: true
+
+      - name: Run ruff format check
+        run: ruff format --check hbond_topology/
+        continue-on-error: true
