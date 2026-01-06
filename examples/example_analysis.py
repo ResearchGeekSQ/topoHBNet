@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hbond_topology.io.trajectory_parser import TrajectoryParser
 from hbond_topology.detection.hbond_detector import HBondDetector
@@ -63,7 +63,8 @@ def main():
     builder = HBondComplexBuilder()
     sc = builder.build_from_frame(frame, hbonds)
     print(f"   Shape: {sc.shape}")
-    print(f"   - Nodes (water molecules): {sc.shape[0]}")
+    n_nodes = sc.shape[0] if len(sc.shape) > 0 else 0
+    print(f"   - Nodes (water molecules): {n_nodes}")
     if len(sc.shape) > 1:
         print(f"   - Edges (H-bonds): {sc.shape[1]}")
     if len(sc.shape) > 2:

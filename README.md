@@ -59,11 +59,11 @@ pip install uv
 ```bash
 # Using uv (recommended)
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
-uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.5.1+cu129.html
+uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.8.0+cu129.html
 
 # Or using pip
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
-pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.5.1+cu129.html
+pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.8.0+cu129.html
 ```
 
 ### Step 2: Install the Package
@@ -182,12 +182,17 @@ hbond_topology/
 │   └── hbond_detector.py       # H-bond detection with PBC
 ├── topology/
 │   ├── complex_builder.py      # TopoNetX construction
-│   └── invariants.py           # Topological invariants
+│   ├── invariants.py           # Topological invariants
+│   └── persistence.py          # Gudhi persistence homology
 ├── embedding/
 │   └── embedder.py             # TopoEmbedX (Cell2Vec, HOPE)
-└── analysis/
-    ├── dynamics.py             # Trajectory analysis
-    └── visualization.py        # Plotting
+├── learning/
+│   └── tnn_model.py            # TopoModelX (SAN, GNN)
+├── analysis/
+│   ├── dynamics.py             # Trajectory analysis
+│   └── visualization.py        # Plotting
+└── scripts/
+    └── run_analysis.py         # CLI entry point
 ```
 
 ---
@@ -215,13 +220,36 @@ embedder = HBondEmbedder(method='cell2vec', dimensions=32)
 embedding = embedder.fit_transform(sc)
 ```
 
-### Persistence Homology (with gudhi)
+### Persistence Homology
 
 ```python
-import gudhi
+from hbond_topology.topology import PersistenceAnalyzer
 
-rips = gudhi.RipsComplex(points=positions, max_edge_length=3.5)
-persistence = rips.create_simplex_tree().persistence()
+analyzer = PersistenceAnalyzer(max_edge_length=5.0, max_dimension=2)
+result = analyzer.analyze_frame(water_positions)
+
+# Betti curve
+scales, betti = analyzer.compute_betti_curve(result['persistence'], dimension=1)
+
+# Persistence landscape (for ML)
+landscape = analyzer.compute_persistence_landscape(result['persistence'], dimension=1)
+```
+
+### Topological Neural Network
+
+```python
+from hbond_topology.learning import HBondTNN, prepare_tnn_data
+
+# Prepare data
+data = prepare_tnn_data(sc)
+
+# Create and use model
+model = HBondTNN(in_channels=1, hidden_channels=32, out_channels=16)
+edge_features, graph_pred = model(
+    data['edge_features'], 
+    data['laplacian_up'], 
+    data['laplacian_down']
+)
 ```
 
 ---

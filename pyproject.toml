@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "SIQI" }
+    { name = "SIQI TANG" }
 ]
 keywords = [
     "hydrogen-bond",
@@ -57,11 +57,11 @@ embedding = [
 #
 # Using uv (recommended, 10-100x faster):
 #   uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
-#   uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.5.1+cu129.html
+#   uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.8.0+cu129.html
 #
 # Or using pip:
 #   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
-#   pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.5.1+cu129.html
+#   pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.8.0+cu129.html
 learning = [
     "topomodelx>=0.0.1",
 ]
@@ -94,9 +94,12 @@ full = [
 hbond-analyze = "hbond_topology.scripts.run_analysis:main"
 
 [project.urls]
-Homepage = "https://github.com/siqi/hbond-topology"
-Documentation = "https://github.com/siqi/hbond-topology#readme"
-Repository = "https://github.com/siqi/hbond-topology"
+Homepage = "https://github.com/ResearchGeekSQ/topoHBNet"
+Documentation = "https://github.com/ResearchGeekSQ/topoHBNet#readme"
+Repository = "https://github.com/ResearchGeekSQ/topoHBNet"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["hbond_topology"]
@@ -115,6 +118,8 @@ target-version = ["py310", "py311", "py312"]
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
