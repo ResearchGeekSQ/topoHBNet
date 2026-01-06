@@ -27,20 +27,14 @@ jobs:
       - name: Install uv
         run: pip install uv
 
-      - name: Install core dependencies
-        run: uv pip install --system -e .
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
 
-      - name: Test import
-        run: |
-          python -c "from hbond_topology.io.trajectory_parser import TrajectoryParser; print('TrajectoryParser OK')"
-          python -c "from hbond_topology.detection.hbond_detector import HBondDetector; print('HBondDetector OK')"
-          python -c "from hbond_topology.topology.complex_builder import HBondComplexBuilder; print('HBondComplexBuilder OK')"
-          python -c "from hbond_topology.topology.invariants import TopologicalInvariants; print('TopologicalInvariants OK')"
-          python -c "from hbond_topology.analysis.dynamics import DynamicsAnalyzer; print('DynamicsAnalyzer OK')"
-          python -c "from hbond_topology.analysis.visualization import TopologyVisualizer; print('TopologyVisualizer OK')"
+      - name: Run tests
+        run: pytest
 
       - name: Test CLI help
-        run: python run_analysis.py --help
+        run: hbond-analyze --help
 
   lint:
     runs-on: ubuntu-latest
