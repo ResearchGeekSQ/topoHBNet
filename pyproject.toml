@@ -1,0 +1,136 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hbond-topology"
+version = "0.1.0"
+description = "Hydrogen Bond Network Topology Analysis using TopoX Suite"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "SIQI" }
+]
+keywords = [
+    "hydrogen-bond",
+    "topology",
+    "molecular-dynamics",
+    "lammps",
+    "simplicial-complex",
+    "topological-data-analysis"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    # Core dependencies
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "networkx>=2.6.0",
+    "matplotlib>=3.4.0",
+    
+    # TopoX Suite - Core
+    "toponetx>=0.0.2",
+]
+
+[project.optional-dependencies]
+# Embedding features (TopoEmbedX)
+embedding = [
+    "pygsp @ git+https://github.com/epfl-lts2/pygsp@643b1c448559da8c7dbaed7537a9fd819183c569",
+    "karateclub @ git+https://github.com/benedekrozemberczki/karateclub@cb46a91df8dcbeb2570debcf6a9d0c518107a2de",
+    "topoembedx>=0.0.1",
+]
+
+# Deep learning features (TopoModelX)
+# IMPORTANT: PyTorch must be installed separately with the correct CUDA version.
+# For RTX 5080 (Blackwell) with CUDA 12.9, run BEFORE installing [learning]:
+#
+# Using uv (recommended, 10-100x faster):
+#   uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
+#   uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.5.1+cu129.html
+#
+# Or using pip:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
+#   pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.5.1+cu129.html
+learning = [
+    "topomodelx>=0.0.1",
+]
+
+# Persistence homology
+persistence = [
+    "gudhi>=3.7.0",
+]
+
+# Development tools
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+# All optional features (except dev)
+all = [
+    "hbond-topology[embedding,learning,persistence]",
+]
+
+# Full installation including dev
+full = [
+    "hbond-topology[all,dev]",
+]
+
+[project.scripts]
+hbond-analyze = "hbond_topology.scripts.run_analysis:main"
+
+[project.urls]
+Homepage = "https://github.com/siqi/hbond-topology"
+Documentation = "https://github.com/siqi/hbond-topology#readme"
+Repository = "https://github.com/siqi/hbond-topology"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hbond_topology"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/hbond_topology",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=hbond_topology --cov-report=term-missing"
