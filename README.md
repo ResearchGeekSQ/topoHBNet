@@ -1,5 +1,9 @@
 # Hydrogen Bond Network Topology Analysis
 
+[![Test](https://github.com/ResearchGeekSQ/topoHBNet/actions/workflows/test.yml/badge.svg)](https://github.com/ResearchGeekSQ/topoHBNet/actions/workflows/test.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Analyze hydrogen bond (H-bond) network topology from LAMMPS molecular dynamics trajectories using the **TopoX Suite** (TopoNetX, TopoModelX, TopoEmbedX).
 
 ## Overview
