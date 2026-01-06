@@ -59,11 +59,11 @@ pip install uv
 ```bash
 # Using uv (recommended)
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
-uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.5.1+cu129.html
+uv pip install torch-scatter torch-sparse --find-links https://data.pyg.org/whl/torch-2.8.0+cu129.html
 
 # Or using pip
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
-pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.5.1+cu129.html
+pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.8.0+cu129.html
 ```
 
 ### Step 2: Install the Package
