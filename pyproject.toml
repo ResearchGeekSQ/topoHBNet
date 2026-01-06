@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "SIQI" }
+    { name = "SIQI TANG" }
 ]
 keywords = [
     "hydrogen-bond",
@@ -94,9 +94,9 @@ full = [
 hbond-analyze = "hbond_topology.scripts.run_analysis:main"
 
 [project.urls]
-Homepage = "https://github.com/siqi/hbond-topology"
-Documentation = "https://github.com/siqi/hbond-topology#readme"
-Repository = "https://github.com/siqi/hbond-topology"
+Homepage = "https://github.com/ResearchGeekSQ/topoHBNet"
+Documentation = "https://github.com/ResearchGeekSQ/topoHBNet#readme"
+Repository = "https://github.com/ResearchGeekSQ/topoHBNet"
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -118,6 +118,8 @@ target-version = ["py310", "py311", "py312"]
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
