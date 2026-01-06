@@ -98,6 +98,9 @@ Homepage = "https://github.com/siqi/hbond-topology"
 Documentation = "https://github.com/siqi/hbond-topology#readme"
 Repository = "https://github.com/siqi/hbond-topology"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["hbond_topology"]
 
