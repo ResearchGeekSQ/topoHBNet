@@ -28,7 +28,9 @@ jobs:
         run: pip install uv
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system -e ".[full]"
 
       - name: Run tests
         run: pytest

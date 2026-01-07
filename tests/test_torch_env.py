@@ -1,5 +1,5 @@
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 import numpy as np
 
 def test_torch_installation():
