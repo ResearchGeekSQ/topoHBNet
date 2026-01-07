@@ -1,26 +1,69 @@
 """
-LAMMPS Trajectory Parser
+Unified Trajectory Parser
 
-Parses LAMMPS dump files (.lammpstrj) to extract atomic positions
-and simulation box information for each timestep.
+Parses molecular dynamics trajectory files from various sources
+(LAMMPS, CP2K, XYZ, VASP, etc.) using ASE as the unified backend.
 """
 
 import numpy as np
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Generator
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Generator, Union
 from pathlib import Path
+
+# ASE imports
+from ase.io import read, iread
+from ase import Atoms
+from ase.data import atomic_numbers
+
+
+# Use atomic numbers from periodic table for element-to-type mapping
+# H=1, He=2, Li=3, ... O=8, ... (all 118 elements supported)
+DEFAULT_ELEMENT_TO_TYPE = atomic_numbers
 
 
 @dataclass
 class Frame:
-    """A single trajectory frame containing atomic data."""
+    """
+    A single trajectory frame containing atomic data.
+    
+    This is a unified frame structure that can be created from either:
+    - ASE Atoms objects (recommended)
+    - Legacy LAMMPS-style numeric data (backward compatible)
+    
+    Attributes
+    ----------
+    timestep : int
+        Frame index or timestep number
+    n_atoms : int
+        Number of atoms in the frame
+    box_bounds : np.ndarray
+        Box boundaries, shape (3, 2) - [[xlo, xhi], [ylo, yhi], [zlo, zhi]]
+    symbols : np.ndarray
+        Element symbols for each atom (e.g., ['O', 'H', 'H', ...])
+    positions : np.ndarray
+        Atomic positions, shape (n_atoms, 3)
+    atom_types : np.ndarray, optional
+        Numeric atom types (for backward compatibility)
+    atom_ids : np.ndarray, optional
+        Atom IDs (for backward compatibility)
+    """
     
     timestep: int
     n_atoms: int
-    box_bounds: np.ndarray  # Shape: (3, 2) - [[xlo, xhi], [ylo, yhi], [zlo, zhi]]
-    atom_ids: np.ndarray
-    atom_types: np.ndarray
-    positions: np.ndarray  # Shape: (n_atoms, 3)
+    box_bounds: np.ndarray
+    symbols: np.ndarray
+    positions: np.ndarray
+    atom_types: Optional[np.ndarray] = None
+    atom_ids: Optional[np.ndarray] = None
+    
+    def __post_init__(self):
+        """Ensure atom_types and atom_ids are set for backward compatibility."""
+        if self.atom_ids is None:
+            self.atom_ids = np.arange(1, self.n_atoms + 1)
+        if self.atom_types is None:
+            self.atom_types = np.array([
+                DEFAULT_ELEMENT_TO_TYPE.get(s, 999) for s in self.symbols
+            ])
     
     @property
     def box_lengths(self) -> np.ndarray:
@@ -28,38 +71,126 @@ class Frame:
         return self.box_bounds[:, 1] - self.box_bounds[:, 0]
     
     def get_atoms_by_type(self, atom_type: int) -> np.ndarray:
-        """Get indices of atoms with specified type."""
+        """Get indices of atoms with specified numeric type."""
         return np.where(self.atom_types == atom_type)[0]
     
+    def get_atoms_by_symbol(self, symbol: str) -> np.ndarray:
+        """Get indices of atoms with specified element symbol."""
+        return np.where(self.symbols == symbol)[0]
+    
     def get_positions_by_type(self, atom_type: int) -> np.ndarray:
-        """Get positions of atoms with specified type."""
+        """Get positions of atoms with specified numeric type."""
         mask = self.atom_types == atom_type
         return self.positions[mask]
+    
+    def get_positions_by_symbol(self, symbol: str) -> np.ndarray:
+        """Get positions of atoms with specified element symbol."""
+        mask = self.symbols == symbol
+        return self.positions[mask]
+    
+    @classmethod
+    def from_ase_atoms(
+        cls, 
+        atoms: Atoms, 
+        timestep: int = 0,
+        element_to_type: Optional[Dict[str, int]] = None
+    ) -> "Frame":
+        """
+        Create Frame from ASE Atoms object.
+        
+        Parameters
+        ----------
+        atoms : ase.Atoms
+            ASE Atoms object
+        timestep : int
+            Frame index/timestep
+        element_to_type : dict, optional
+            Mapping from element symbols to numeric types
+        
+        Returns
+        -------
+        Frame
+            Unified frame object
+        """
+        element_map = element_to_type or DEFAULT_ELEMENT_TO_TYPE
+        
+        # Extract cell/box information
+        cell = atoms.get_cell()
+        if cell.any():
+            # Use cell diagonal as box bounds (works for orthorhombic cells)
+            box_bounds = np.array([
+                [0.0, cell[0, 0]],
+                [0.0, cell[1, 1]],
+                [0.0, cell[2, 2]]
+            ])
+        else:
+            # No cell defined, use atom extent
+            positions = atoms.get_positions()
+            min_pos = positions.min(axis=0) - 1.0
+            max_pos = positions.max(axis=0) + 1.0
+            box_bounds = np.column_stack([min_pos, max_pos])
+        
+        symbols = np.array(atoms.get_chemical_symbols())
+        atom_types = np.array([element_map.get(s, 999) for s in symbols])
+        
+        return cls(
+            timestep=timestep,
+            n_atoms=len(atoms),
+            box_bounds=box_bounds,
+            symbols=symbols,
+            positions=atoms.get_positions(),
+            atom_types=atom_types,
+            atom_ids=np.arange(1, len(atoms) + 1)
+        )
 
 
 class TrajectoryParser:
     """
-    Parser for LAMMPS trajectory dump files.
+    Unified parser for molecular dynamics trajectories.
     
-    Supports the standard LAMMPS dump format with columns:
-    id type x y z
+    Uses ASE as backend to support multiple trajectory formats:
+    - LAMMPS dump (.lammpstrj, .dump)
+    - CP2K (.xyz, .dcd)
+    - XYZ (.xyz)
+    - Extended XYZ (.extxyz)
+    - VASP (POSCAR, CONTCAR, XDATCAR)
+    - And 80+ other formats supported by ASE
     
     Parameters
     ----------
     filepath : str or Path
-        Path to the .lammpstrj file
-    atom_type_map : dict, optional
-        Mapping from atom type integers to element symbols.
-        Default: {1: 'O', 2: 'H', 3: 'Si', 4: 'Si'}
+        Path to trajectory file
+    format : str, optional
+        File format (auto-detected if not specified).
+        See https://wiki.fysik.dtu.dk/ase/ase/io/io.html for options.
+    element_to_type : dict, optional
+        Mapping from element symbols to numeric atom types.
+        Default: {'O': 1, 'H': 2, ...}
+    
+    Examples
+    --------
+    # Auto-detect format
+    >>> parser = TrajectoryParser("trajectory.lammpstrj")
+    >>> frames = parser.parse()
+    
+    # Specify format explicitly
+    >>> parser = TrajectoryParser("pos.xyz", format="xyz")
+    >>> frames = parser.parse()
+    
+    # Iterate without loading all frames
+    >>> for frame in TrajectoryParser("large_traj.xyz"):
+    ...     process(frame)
     """
     
     def __init__(
         self, 
-        filepath: str | Path,
-        atom_type_map: Optional[Dict[int, str]] = None
+        filepath: Union[str, Path],
+        format: Optional[str] = None,
+        element_to_type: Optional[Dict[str, int]] = None
     ):
         self.filepath = Path(filepath)
-        self.atom_type_map = atom_type_map or {1: 'O', 2: 'H', 3: 'Si', 4: 'Si'}
+        self.format = format
+        self.element_to_type = element_to_type or DEFAULT_ELEMENT_TO_TYPE
         self._frames: List[Frame] = []
         self._parsed = False
     
@@ -75,66 +206,24 @@ class TrajectoryParser:
         if self._parsed:
             return self._frames
         
-        self._frames = list(self._parse_generator())
+        # Read all frames using ASE
+        atoms_list = read(str(self.filepath), index=':', format=self.format)
+        
+        # Handle single Atoms object (not a list)
+        if isinstance(atoms_list, Atoms):
+            atoms_list = [atoms_list]
+        
+        self._frames = [
+            Frame.from_ase_atoms(atoms, i, self.element_to_type)
+            for i, atoms in enumerate(atoms_list)
+        ]
         self._parsed = True
         return self._frames
     
     def _parse_generator(self) -> Generator[Frame, None, None]:
-        """Generator that yields frames one at a time."""
-        with open(self.filepath, 'r') as f:
-            while True:
-                frame = self._read_frame(f)
-                if frame is None:
-                    break
-                yield frame
-    
-    def _read_frame(self, file) -> Optional[Frame]:
-        """Read a single frame from the file."""
-        # Read ITEM: TIMESTEP
-        line = file.readline()
-        if not line:
-            return None
-        
-        if 'ITEM: TIMESTEP' not in line:
-            return None
-        
-        timestep = int(file.readline().strip())
-        
-        # Read ITEM: NUMBER OF ATOMS
-        file.readline()  # ITEM: NUMBER OF ATOMS
-        n_atoms = int(file.readline().strip())
-        
-        # Read ITEM: BOX BOUNDS
-        file.readline()  # ITEM: BOX BOUNDS pp pp pp
-        box_bounds = np.zeros((3, 2))
-        for i in range(3):
-            parts = file.readline().split()
-            box_bounds[i, 0] = float(parts[0])
-            box_bounds[i, 1] = float(parts[1])
-        
-        # Read ITEM: ATOMS
-        file.readline()  # ITEM: ATOMS id type x y z
-        
-        atom_ids = np.zeros(n_atoms, dtype=int)
-        atom_types = np.zeros(n_atoms, dtype=int)
-        positions = np.zeros((n_atoms, 3))
-        
-        for i in range(n_atoms):
-            parts = file.readline().split()
-            atom_ids[i] = int(parts[0])
-            atom_types[i] = int(parts[1])
-            positions[i, 0] = float(parts[2])
-            positions[i, 1] = float(parts[3])
-            positions[i, 2] = float(parts[4])
-        
-        return Frame(
-            timestep=timestep,
-            n_atoms=n_atoms,
-            box_bounds=box_bounds,
-            atom_ids=atom_ids,
-            atom_types=atom_types,
-            positions=positions
-        )
+        """Generator that yields frames one at a time (memory efficient)."""
+        for i, atoms in enumerate(iread(str(self.filepath), format=self.format)):
+            yield Frame.from_ase_atoms(atoms, i, self.element_to_type)
     
     def __len__(self) -> int:
         """Return number of frames in trajectory."""
@@ -149,11 +238,12 @@ class TrajectoryParser:
         return self._frames[idx]
     
     def __iter__(self):
-        """Iterate over frames."""
-        if not self._parsed:
-            self.parse()
-        return iter(self._frames)
+        """Iterate over frames (uses generator for memory efficiency if not parsed)."""
+        if self._parsed:
+            return iter(self._frames)
+        return self._parse_generator()
     
     def get_element_symbol(self, atom_type: int) -> str:
-        """Get element symbol for atom type."""
-        return self.atom_type_map.get(atom_type, 'X')
+        """Get element symbol for numeric atom type (reverse lookup)."""
+        type_to_element = {v: k for k, v in self.element_to_type.items()}
+        return type_to_element.get(atom_type, 'X')

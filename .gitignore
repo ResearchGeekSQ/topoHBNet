@@ -48,7 +48,8 @@ htmlcov/
 .mypy_cache/
 
 # Analysis outputs (optional: keep if you want to track results)
-results/
+results_*/
+results
 *.png
 *.jpg
 *.json

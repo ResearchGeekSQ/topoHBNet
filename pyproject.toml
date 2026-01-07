@@ -41,6 +41,9 @@ dependencies = [
     
     # TopoX Suite - Core
     "toponetx>=0.0.2",
+
+    # ASE for unified trajectory parsing (LAMMPS, CP2K, XYZ, etc.)
+    "ase>=3.22.0",
 ]
 
 [project.optional-dependencies]

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-example_analysis.py
 
 Example script demonstrating basic usage of the H-bond topology analysis package.
+
 """
 
 import sys

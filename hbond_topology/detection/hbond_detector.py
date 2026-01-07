@@ -54,10 +54,14 @@ class HBondDetector:
         Maximum hydrogen-acceptor distance for H-bond (default: 2.5 Å)
     angle_min : float
         Minimum D-H-A angle in degrees (default: 120°)
+    o_symbol : str
+        Element symbol for oxygen (default: 'O'). Preferred over o_atom_type.
+    h_symbol : str
+        Element symbol for hydrogen (default: 'H'). Preferred over h_atom_type.
     o_atom_type : int
-        Atom type for oxygen (default: 1)
+        Atom type for oxygen (default: 1). Used if symbols not available.
     h_atom_type : int
-        Atom type for hydrogen (default: 2)
+        Atom type for hydrogen (default: 2). Used if symbols not available.
     """
     
     def __init__(
@@ -66,6 +70,8 @@ class HBondDetector:
         r_da_max: float = 3.5,
         r_ha_max: float = 2.5,
         angle_min: float = 120.0,
+        o_symbol: str = 'O',
+        h_symbol: str = 'H',
         o_atom_type: int = 1,
         h_atom_type: int = 2
     ):
@@ -73,6 +79,8 @@ class HBondDetector:
         self.r_da_max = r_da_max
         self.r_ha_max = r_ha_max
         self.angle_min = angle_min
+        self.o_symbol = o_symbol
+        self.h_symbol = h_symbol
         self.o_atom_type = o_atom_type
         self.h_atom_type = h_atom_type
     
@@ -103,9 +111,15 @@ class HBondDetector:
         Identify water molecules by finding O-H pairs.
         
         Each oxygen should have exactly 2 hydrogens within r_oh_max distance.
+        Uses element symbols if available, falls back to atom types.
         """
-        o_indices = frame.get_atoms_by_type(self.o_atom_type)
-        h_indices = frame.get_atoms_by_type(self.h_atom_type)
+        # Prefer symbols if frame has them, otherwise use atom types
+        if hasattr(frame, 'symbols') and frame.symbols is not None:
+            o_indices = frame.get_atoms_by_symbol(self.o_symbol)
+            h_indices = frame.get_atoms_by_symbol(self.h_symbol)
+        else:
+            o_indices = frame.get_atoms_by_type(self.o_atom_type)
+            h_indices = frame.get_atoms_by_type(self.h_atom_type)
         
         water_molecules = []
         box_lengths = frame.box_lengths
