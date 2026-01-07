@@ -1,39 +1,35 @@
 #!/usr/bin/env python3
 """
-Example: CP2K AIMD Trajectory Analysis (Extended)
 
 This script demonstrates comprehensive hydrogen bond network analysis from
 CP2K AIMD XYZ trajectory files using the hbond_topology package.
 
 Features:
 - Basic H-bond detection and counting
-- Topological invariants (Betti numbers, Euler characteristic)
-- H-bond lifetime analysis
-- Coordination number distribution
-- Network degree distribution
-- H-bond autocorrelation function
-- Network clustering coefficient
-- O-O radial distribution function (RDF)
+- Topological invariants (Betti-0, Betti-1, Betti-2, Euler characteristic)
+- H-bond lifetime and autocorrelation analysis
+- Coordination, degree, and clustering distributions
+- Radial distribution functions (RDF) for multiple species
 - H-bond strength classification
-- Persistent homology (if GUDHI available)
+- Persistent homology barcode and diagrams (TDA)
+- Topological Machine Learning (Embedding, TNN feature extraction, PCA)
 
 Usage:
     python example_analysis.py                        # Use default parameters
-    python example_analysis.py --timestep 0.5         # Set timestep to 0.5 fs
+    python example_analysis.py --run-ml               # Run with topological ML
     python example_analysis.py --sample-interval 5    # Analyze every 5 frames
-    python example_analysis.py --dpi 300              # Set figure DPI to 300
 
 Output Files:
 - analysis_results.json: Per-frame analysis data
-- statistics_summary.json: Overall statistics
-- hbond_dynamics.png: H-bond count over time
-- betti_dynamics.png: Betti numbers over time
-- hbond_distributions.png: Distance and angle distributions
-- coordination_degree.png: Coordination and degree distributions
-- hbond_lifetime.png: H-bond lifetime distribution
-- autocorrelation.png: H-bond autocorrelation function
-- rdf_oo.png: O-O radial distribution function
-- clustering_strength.png: Clustering coefficient and H-bond strength
+- statistics_summary.json: Overall statistics (includes TML data)
+- hbond_dynamics.png, betti_dynamics.png: Time-series analysis plots
+- hbond_distributions.png, coordination_degree.png: Statistical distributions
+- hbond_lifetime.png, autocorrelation.png: Dynamical properties
+- rdf_*.png: Radial distribution functions for species pairs
+- clustering_strength.png: Clustering and H-bond strength classification
+- persistence_barcode.png, persistence_diagram.png: TDA visualizations
+- similarity_heatmap.png, embedding_pca.png, pca_time_series.png: TML visualizations
+- frame_embeddings.npy, tnn_features.npy: Raw topological ML features
 """
 
 import sys
@@ -41,7 +37,7 @@ import json
 import argparse
 import numpy as np
 from pathlib import Path
-from typing import List, Dict, Set, Tuple
+from typing import List, Dict, Set, Tuple, Optional
 from collections import defaultdict
 
 # Add parent directory to path for development
@@ -57,6 +53,8 @@ from hbond_topology.analysis import (
     plot_persistence_diagram,
 )
 from hbond_topology.io.trajectory_parser import TrajectoryParser, Frame
+from hbond_topology.embedding import HBondEmbedder
+from hbond_topology.learning import HBondTNN, prepare_tnn_data
 
 # Check for optional dependencies
 HAS_GUDHI = False
@@ -96,6 +94,12 @@ def parse_args():
     parser.add_argument('--output-dir', '-o', type=str, default='results',
                         help='Output directory')
     
+    # Machine Learning parameters
+    parser.add_argument('--run-ml', action='store_true',
+                        help='Run topological machine learning analysis')
+    parser.add_argument('--ml-dim', type=int, default=32,
+                        help='Embedding/Hidden dimension for ML')
+    
     return parser.parse_args()
 
 
@@ -124,6 +128,7 @@ def analyze_frame(frame: Frame, detector: HBondDetector, builder: HBondComplexBu
         'angles_dha': [hb.angle_dha for hb in hbonds],
         'betti_0': 0,
         'betti_1': 0,
+        'betti_2': 0,
         'euler_char': 0,
     }
     
@@ -133,9 +138,13 @@ def analyze_frame(frame: Frame, detector: HBondDetector, builder: HBondComplexBu
             inv = invariants.compute_all_invariants(sc)
             result['betti_0'] = inv['betti_numbers'][0]
             result['betti_1'] = inv['betti_numbers'][1] if len(inv['betti_numbers']) > 1 else 0
+            result['betti_2'] = inv['betti_numbers'][2] if len(inv['betti_numbers']) > 2 else 0
             result['euler_char'] = inv['euler_characteristic']
-        except Exception:
-            pass
+        except Exception as e:
+            # Note: We don't want to crash the whole analysis if one frame fails
+            # but we should at least know it happened.
+            if 'sc' in locals():
+                print(f"    Warning: Invariant computation failed for frame {frame.timestep}: {e}")
     
     return result
 
@@ -507,6 +516,7 @@ def generate_basic_plots(results: List[Dict], output_dir: Path, timestep_fs: flo
     n_hbonds = [r['n_hbonds'] for r in results]
     betti_0 = [r['betti_0'] for r in results]
     betti_1 = [r['betti_1'] for r in results]
+    betti_2 = [r['betti_2'] for r in results]
     
     all_distances_da = []
     all_distances_ha = []
@@ -532,7 +542,7 @@ def generate_basic_plots(results: List[Dict], output_dir: Path, timestep_fs: flo
     print(f"    Saved: hbond_dynamics.png")
     
     # 2. Betti Number Dynamics
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     axes[0].plot(times, betti_0, 'g-', linewidth=1.5, label=r'$\beta_0$ (components)')
     axes[0].fill_between(times, betti_0, alpha=0.3, color='green')
     axes[0].set_ylabel(r'$\beta_0$', fontsize=12)
@@ -541,9 +551,14 @@ def generate_basic_plots(results: List[Dict], output_dir: Path, timestep_fs: flo
     
     axes[1].plot(times, betti_1, 'r-', linewidth=1.5, label=r'$\beta_1$ (loops)')
     axes[1].fill_between(times, betti_1, alpha=0.3, color='red')
-    axes[1].set_xlabel('Simulation time (fs)', fontsize=12)
     axes[1].set_ylabel(r'$\beta_1$', fontsize=12)
     axes[1].legend(loc='upper right')
+    
+    axes[2].plot(times, betti_2, 'b-', linewidth=1.5, label=r'$\beta_2$ (voids)')
+    axes[2].fill_between(times, betti_2, alpha=0.3, color='blue')
+    axes[2].set_xlabel('Simulation time (fs)', fontsize=12)
+    axes[2].set_ylabel(r'$\beta_2$', fontsize=12)
+    axes[2].legend(loc='upper right')
     
     fig.tight_layout()
     fig.savefig(output_dir / "betti_dynamics.png", dpi=dpi, bbox_inches='tight')
@@ -594,8 +609,6 @@ def generate_advanced_plots(results: List[Dict], frames: List[Frame],
     import matplotlib.pyplot as plt
     
     plt.style.use('seaborn-v0_8-whitegrid')
-    
-    # ... (skipping coordination/degree/lifetime part for now, focusing on time)
     
     # 4. Coordination and Degree Distribution
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
@@ -738,10 +751,186 @@ def generate_advanced_plots(results: List[Dict], frames: List[Frame],
 
 
 # =============================================================================
+# Topological Machine Learning Analysis
+# =============================================================================
+
+def perform_topological_ml_analysis(sc_list: List, ml_dim: int) -> Dict:
+    """
+    Perform topological machine learning analysis on a list of simplicial complexes.
+    
+    Includes:
+    - Topological embeddings (Cell2Vec)
+    - TNN feature extraction (SAN)
+    - Dimensionality reduction (PCA)
+    """
+    if not sc_list:
+        return {}
+    
+    print(f"    Running TML on {len(sc_list)} frames...")
+    
+    # 1. Topological Embeddings
+    print("        Generating Cell2Vec embeddings...")
+    embedder = HBondEmbedder(method='cell2vec', dimensions=ml_dim)
+    frame_embeddings = []
+    
+    for sc in sc_list:
+        try:
+            # Try specified method first, fallback to HOPE if it fails or returns zeros
+            emb = embedder.fit_transform(sc)
+            
+            # If zeros or None, try HOPE (deterministic)
+            if emb is None or len(emb) == 0 or np.ptp(emb) == 0:
+                fallback_embedder = HBondEmbedder(method='hope', dimensions=ml_dim)
+                emb = fallback_embedder.fit_transform(sc)
+                
+            if emb is not None and len(emb) > 0:
+                frame_embeddings.append(np.mean(emb, axis=0))
+            else:
+                frame_embeddings.append(np.zeros(ml_dim))
+        except Exception:
+            frame_embeddings.append(np.zeros(ml_dim))
+    
+    frame_embeddings = np.array(frame_embeddings)
+    
+    # Debug: Check variance
+    ptp = np.ptp(frame_embeddings)
+    if ptp == 0:
+        print("        Warning: Frame embeddings have zero variance. Try a different rank or check data.")
+    
+    # 2. TNN Feature Extraction (Demonstration)
+    print("        Extracting TNN features (SAN forward pass)...")
+    tnn_features = None
+    try:
+        import torch
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"        Using device: {device}")
+        
+        model = HBondTNN(in_channels=1, hidden_channels=ml_dim, out_channels=ml_dim)
+        model = model.to(device)
+        model.eval()
+        
+        tnn_feats_list = []
+        for sc in sc_list:
+            if sc.dim >= 1:
+                data = prepare_tnn_data(sc)
+                # Move data to device
+                edge_features = data['edge_features'].to(device)
+                laplacian_up = data['laplacian_up'].to(device)
+                laplacian_down = data['laplacian_down'].to(device)
+                
+                with torch.no_grad():
+                    edge_feats, _ = model(edge_features, laplacian_up, laplacian_down)
+                    # Move result back to CPU for numpy conversion
+                    tnn_feats_list.append(edge_feats.mean(dim=0).cpu().numpy())
+            else:
+                tnn_feats_list.append(np.zeros(ml_dim))
+        tnn_features = np.array(tnn_feats_list)
+    except Exception as e:
+        print(f"        Warning: TNN feature extraction failed: {e}")
+    
+    # 3. PCA on embeddings
+    pca_results = None
+    explained_variance = []
+    try:
+        from sklearn.decomposition import PCA
+        # Check if we have enough variance to run PCA
+        if len(frame_embeddings) > 1 and ptp > 0:
+            pca = PCA(n_components=min(2, len(frame_embeddings)))
+            pca_results = pca.fit_transform(frame_embeddings)
+            explained_variance = pca.explained_variance_ratio_.tolist()
+        else:
+            # If zero variance, we can still "mock" PCA data for visualization if we want
+            # but better to just report it.
+            print("        Skipping PCA: zero variance in embeddings.")
+    except Exception as e:
+         print(f"        Warning: PCA analysis failed: {e}")
+        
+    return {
+        'frame_embeddings': frame_embeddings,
+        'tnn_features': tnn_features,
+        'pca_results': pca_results,
+        'explained_variance': explained_variance
+    }
+
+
+def generate_ml_plots(ml_results: Dict, output_dir: Path, dpi: int):
+    """Generate plots for TML analysis."""
+    import matplotlib.pyplot as plt
+    
+    plt.style.use('seaborn-v0_8-whitegrid')
+    
+    # 1. Similarity Heatmap (Doesn't depend on PCA)
+    embeddings = ml_results.get('frame_embeddings')
+    if embeddings is not None and len(embeddings) > 1:
+        try:
+            from sklearn.metrics.pairwise import cosine_similarity
+            similarity_matrix = cosine_similarity(embeddings)
+            
+            fig, ax = plt.subplots(figsize=(8, 7))
+            im = ax.imshow(similarity_matrix, cmap='magma', origin='lower')
+            cbar = plt.colorbar(im)
+            cbar.set_label('Cosine Similarity', fontsize=12)
+            ax.set_xlabel('Frame Index', fontsize=12)
+            ax.set_ylabel('Frame Index', fontsize=12)
+            ax.set_title('Inter-Frame Topological Similarity', fontsize=14, fontweight='bold')
+            
+            fig.tight_layout()
+            fig.savefig(output_dir / "similarity_heatmap.png", dpi=dpi, bbox_inches='tight')
+            plt.close(fig)
+            print(f"    Saved: similarity_heatmap.png")
+        except Exception as e:
+            print(f"    Warning: Similarity heatmap failed: {e}")
+
+    # 2. PCA Results (Scatter and Time-Series)
+    pca_data = ml_results.get('pca_results')
+    if pca_data is not None and len(pca_data) >= 1:
+        try:
+            # PCA Scatter Plot
+            fig, ax = plt.subplots(figsize=(8, 6))
+            scatter = ax.scatter(pca_data[:, 0], pca_data[:, 1], c=range(len(pca_data)), 
+                                 cmap='viridis', alpha=0.7, s=50)
+            cbar = plt.colorbar(scatter)
+            cbar.set_label('Frame Index', fontsize=12)
+            
+            if len(ml_results.get('explained_variance', [])) >= 2:
+                ax.set_xlabel(f'PC1 ({ml_results["explained_variance"][0]*100:.1f}%)', fontsize=12)
+                ax.set_ylabel(f'PC2 ({ml_results["explained_variance"][1]*100:.1f}%)', fontsize=12)
+            else:
+                ax.set_xlabel('PC1', fontsize=12)
+                ax.set_ylabel('PC2', fontsize=12)
+                
+            ax.set_title('PCA of Topological Embeddings', fontsize=14, fontweight='bold')
+            
+            fig.tight_layout()
+            fig.savefig(output_dir / "embedding_pca.png", dpi=dpi, bbox_inches='tight')
+            plt.close(fig)
+            print(f"    Saved: embedding_pca.png")
+        except Exception as e:
+            print(f"    Warning: PCA scatter plot failed: {e}")
+        
+        try:
+            # PCA vs Time
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(range(len(pca_data)), pca_data[:, 0], label='PC1', marker='.')
+            if pca_data.shape[1] > 1:
+                ax.plot(range(len(pca_data)), pca_data[:, 1], label='PC2', marker='.')
+            ax.set_xlabel('Frame Index', fontsize=12)
+            ax.set_ylabel('Principal Component Value', fontsize=12)
+            ax.set_title('PCA Components Over Time', fontsize=14, fontweight='bold')
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(output_dir / "pca_time_series.png", dpi=dpi, bbox_inches='tight')
+            plt.close(fig)
+            print(f"    Saved: pca_time_series.png")
+        except Exception as e:
+            print(f"    Warning: PCA time-series plot failed: {e}")
+
+
+# =============================================================================
 # Results Saving
 # =============================================================================
 
-def save_results(results: List[Dict], advanced_stats: Dict, output_dir: Path):
+def save_results(results: List[Dict], advanced_stats: Dict, output_dir: Path, ml_results: Optional[Dict] = None):
     """Save analysis results to JSON files."""
     def convert(obj):
         if isinstance(obj, np.ndarray):
@@ -762,6 +951,7 @@ def save_results(results: List[Dict], advanced_stats: Dict, output_dir: Path):
             'n_hbonds': convert(r['n_hbonds']),
             'betti_0': convert(r['betti_0']),
             'betti_1': convert(r['betti_1']),
+            'betti_2': convert(r['betti_2']),
             'euler_char': convert(r['euler_char']),
             'mean_distance_da': float(np.mean(r['distances_da'])) if r['distances_da'] else 0,
             'mean_angle_dha': float(np.mean(r['angles_dha'])) if r['angles_dha'] else 0,
@@ -775,6 +965,7 @@ def save_results(results: List[Dict], advanced_stats: Dict, output_dir: Path):
     n_hbonds = [r['n_hbonds'] for r in results]
     betti_0 = [r['betti_0'] for r in results]
     betti_1 = [r['betti_1'] for r in results]
+    betti_2 = [r['betti_2'] for r in results]
     
     all_distances_da = []
     all_angles = []
@@ -798,6 +989,10 @@ def save_results(results: List[Dict], advanced_stats: Dict, output_dir: Path):
             'betti_1': {
                 'mean': float(np.mean(betti_1)),
                 'std': float(np.std(betti_1)),
+            },
+            'betti_2': {
+                'mean': float(np.mean(betti_2)),
+                'std': float(np.std(betti_2)),
             },
             'geometry': {
                 'mean_distance_da': float(np.mean(all_distances_da)) if all_distances_da else 0,
@@ -833,6 +1028,20 @@ def save_results(results: List[Dict], advanced_stats: Dict, output_dir: Path):
         }
     }
     
+    if ml_results:
+        stats['topological_machine_learning'] = {
+            'pca_explained_variance': convert(ml_results.get('explained_variance')),
+            'feature_extraction': 'Cell2Vec (Embedding) + SAN (TNN)'
+        }
+        
+        # Save embeddings separately
+        if ml_results.get('frame_embeddings') is not None:
+            np.save(output_dir / "frame_embeddings.npy", ml_results['frame_embeddings'])
+            print(f"    Saved: frame_embeddings.npy")
+        if ml_results.get('tnn_features') is not None:
+            np.save(output_dir / "tnn_features.npy", ml_results['tnn_features'])
+            print(f"    Saved: tnn_features.npy")
+    
     with open(output_dir / "statistics_summary.json", 'w') as f:
         json.dump(stats, f, indent=2)
     print(f"    Saved: statistics_summary.json")
@@ -853,7 +1062,7 @@ def main():
         return
     
     print("=" * 70)
-    print("CP2K AIMD Hydrogen Bond Topology Analysis (Extended)")
+    print("CP2K AIMD Hydrogen Bond Topology Analysis")
     print("=" * 70)
     print(f"\nConfiguration:")
     print(f"    Timestep: {args.timestep} fs")
@@ -894,11 +1103,21 @@ def main():
     print(f"\n[3] Analyzing trajectory (every {sample_interval} frames)...")
     sampled_frames = frames[::sample_interval]
     results = []
+    sc_list = [] if args.run_ml else None
     
     for i, frame in enumerate(sampled_frames):
         result = analyze_frame(frame, detector, builder, invariants)
         result['timestep'] = i * sample_interval
         results.append(result)
+        
+        if args.run_ml:
+            hbonds = detector.detect_hbonds(frame)
+            if hbonds:
+                sc_list.append(builder.build_from_frame(frame, hbonds))
+            else:
+                import toponetx as tnx
+                sc_list.append(tnx.SimplicialComplex())
+                
         if (i + 1) % 50 == 0:
             print(f"    Processed {i + 1}/{len(sampled_frames)} frames...")
     
@@ -954,9 +1173,16 @@ def main():
     output_dir = Path(__file__).parent / args.output_dir
     output_dir.mkdir(exist_ok=True)
     
+    # ML Analysis
+    ml_results = {}
+    if args.run_ml:
+        print("\n[5.5] Running Topological Machine Learning analysis...")
+        ml_results = perform_topological_ml_analysis(sc_list, args.ml_dim)
+        generate_ml_plots(ml_results, output_dir, args.dpi)
+    
     # Save results
     print("\n[6] Saving results...")
-    save_results(results, advanced_stats, output_dir)
+    save_results(results, advanced_stats, output_dir, ml_results if args.run_ml else None)
     
     # Generate plots
     print("\n[7] Generating plots...")

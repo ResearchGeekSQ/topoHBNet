@@ -49,7 +49,7 @@ htmlcov/
 
 # Analysis outputs (optional: keep if you want to track results)
 results_*/
-results
+results*
 *.png
 *.jpg
 *.json

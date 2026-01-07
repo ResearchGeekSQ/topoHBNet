@@ -6,6 +6,7 @@ using TopoModelX (Simplicial Attention Network).
 """
 
 import numpy as np
+import scipy.sparse as sp
 from typing import Optional, Dict, Any, Tuple, List
 
 try:
@@ -191,6 +192,11 @@ def prepare_tnn_data(
         laplacian_down = np.zeros((n_edges, n_edges))
     
     # Convert to torch tensors
+    if not sp.issparse(laplacian_up):
+        laplacian_up = sp.coo_matrix(laplacian_up)
+    if not sp.issparse(laplacian_down):
+        laplacian_down = sp.coo_matrix(laplacian_down)
+        
     laplacian_up = from_sparse(laplacian_up)
     laplacian_down = from_sparse(laplacian_down)
     
