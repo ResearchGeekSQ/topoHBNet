@@ -116,7 +116,14 @@ class HBondEmbedder:
         self._create_model()
         
         # Configure neighborhood dimension
-        neighborhood_dim = {"rank": self.rank, "via_rank": -1}
+        # For nodes (rank 0), we use edges (rank 1) as via_rank
+        # For other ranks, we use rank-1
+        if self.rank == 0:
+            v_rank = 1
+        else:
+            v_rank = self.rank - 1
+            
+        neighborhood_dim = {"rank": self.rank, "via_rank": v_rank}
         
         try:
             self._model.fit(
@@ -126,9 +133,13 @@ class HBondEmbedder:
             )
             self._embedding = self._model.get_embedding()
         except Exception as e:
-            # Handle case where complex is too small
-            print(f"Warning: Embedding failed - {e}")
-            self._embedding = None
+            # Fallback for very small complexes: try basic adjacency if default fails
+            try:
+                self._model.fit(sc, neighborhood_type=neighborhood_type)
+                self._embedding = self._model.get_embedding()
+            except Exception:
+                print(f"Warning: Embedding failed - {e}")
+                self._embedding = None
         
         return self
     
