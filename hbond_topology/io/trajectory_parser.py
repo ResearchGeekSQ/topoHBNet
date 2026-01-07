@@ -190,6 +190,11 @@ class TrajectoryParser:
     ):
         self.filepath = Path(filepath)
         self.format = format
+        # ASE sometimes needs explicit format for LAMMPS dump files
+        if self.format is None:
+            if self.filepath.suffix in ['.lammpstrj', '.dump']:
+                self.format = 'lammps-dump-text'
+        
         self.element_to_type = element_to_type or DEFAULT_ELEMENT_TO_TYPE
         self._frames: List[Frame] = []
         self._parsed = False
@@ -214,7 +219,11 @@ class TrajectoryParser:
             atoms_list = [atoms_list]
         
         self._frames = [
-            Frame.from_ase_atoms(atoms, i, self.element_to_type)
+            Frame.from_ase_atoms(
+                atoms, 
+                atoms.info.get('timestep', atoms.info.get('time', i)), 
+                self.element_to_type
+            )
             for i, atoms in enumerate(atoms_list)
         ]
         self._parsed = True
@@ -223,7 +232,8 @@ class TrajectoryParser:
     def _parse_generator(self) -> Generator[Frame, None, None]:
         """Generator that yields frames one at a time (memory efficient)."""
         for i, atoms in enumerate(iread(str(self.filepath), format=self.format)):
-            yield Frame.from_ase_atoms(atoms, i, self.element_to_type)
+            timestep = atoms.info.get('timestep', atoms.info.get('time', i))
+            yield Frame.from_ase_atoms(atoms, timestep, self.element_to_type)
     
     def __len__(self) -> int:
         """Return number of frames in trajectory."""
