@@ -24,7 +24,7 @@ This package provides topological data analysis tools for studying the dynamics 
 
 ```mermaid
 flowchart TD
-    A[LAMMPS Trajectory<br/>trajectory.lammpstrj] --> B[Parse Atomic Coordinates]
+    A[MD Trajectory<br/>LAMMPS/CP2K] --> B[Parse Atomic Coordinates]
     B --> C[Identify Water Molecules<br/>O-H Pairs]
     C --> D[H-bond Detection<br/>Geometric Criteria]
     D --> E[Build H-bond Graph<br/>NetworkX Graph]
@@ -177,7 +177,7 @@ python run_analysis.py trajectory.lammpstrj \
 ```
 hbond_topology/
 ├── io/
-│   └── trajectory_parser.py    # LAMMPS trajectory parsing
+│   └── trajectory_parser.py    # LAMMPS/CP2K trajectory parsing
 ├── detection/
 │   └── hbond_detector.py       # H-bond detection with PBC
 ├── topology/
@@ -187,12 +187,17 @@ hbond_topology/
 ├── embedding/
 │   └── embedder.py             # TopoEmbedX (Cell2Vec, HOPE)
 ├── learning/
-│   └── tnn_model.py            # TopoModelX (SAN, GNN)
+│   ├── tnn_model.py            # HBondTNN, HBondGNN
+│   └── gnn_enhanced_tnn.py     # GNN-Enhanced TNN (experimental)
 ├── analysis/
 │   ├── dynamics.py             # Trajectory analysis
 │   └── visualization.py        # Plotting
 └── scripts/
     └── run_analysis.py         # CLI entry point
+
+examples/
+├── lammps/                     # LAMMPS trajectory examples
+└── cp2k_aimd/                  # CP2K AIMD XYZ trajectory examples
 ```
 
 ---
@@ -248,6 +253,42 @@ model = HBondTNN(in_channels=1, hidden_channels=32, out_channels=16)
 edge_features, graph_pred = model(
     data['edge_features'], 
     data['laplacian_up'], 
+    data['laplacian_down']
+)
+```
+
+### Lightweight GNN (No TopoModelX Required)
+
+```python
+from hbond_topology.learning import HBondGNN
+
+# Simple GNN for H-bond networks
+model = HBondGNN(in_channels=1, hidden_channels=32, out_channels=16)
+node_emb, graph_pred = model(node_features, adj)
+```
+
+### GNN-Enhanced TNN (Experimental)
+
+```python
+from hbond_topology.learning import GNNEnhancedTNN, prepare_gnn_tnn_data
+
+# Prepare data
+data = prepare_gnn_tnn_data(sc)
+
+# Create hybrid model (GNN + TNN fusion)
+model = GNNEnhancedTNN(
+    node_in_channels=1,
+    edge_in_channels=1,
+    hidden_channels=32,
+    out_channels=16,
+    fusion='parallel'  # or 'residual'
+)
+
+out = model(
+    data['node_features'],
+    data['edge_features'],
+    data['adj'],
+    data['laplacian_up'],
     data['laplacian_down']
 )
 ```

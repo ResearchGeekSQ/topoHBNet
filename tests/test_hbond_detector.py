@@ -39,6 +39,7 @@ class TestHBondDetector:
             timestep=0,
             n_atoms=6,
             box_bounds=np.array([[0, 20], [0, 20], [0, 20]]),
+            symbols=np.array(['O', 'H', 'H', 'O', 'H', 'H']),
             atom_ids=np.arange(1, 7),
             atom_types=np.array([1, 2, 2, 1, 2, 2]),
             positions=positions
@@ -124,6 +125,7 @@ class TestHBondDetector:
             timestep=0,
             n_atoms=6,
             box_bounds=np.array([[0, 50], [0, 50], [0, 50]]),
+            symbols=np.array(['O', 'H', 'H', 'O', 'H', 'H']),
             atom_ids=np.arange(1, 7),
             atom_types=np.array([1, 2, 2, 1, 2, 2]),
             positions=positions

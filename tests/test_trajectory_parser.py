@@ -20,6 +20,7 @@ class TestFrame:
             timestep=100,
             n_atoms=3,
             box_bounds=np.array([[0, 10], [0, 10], [0, 10]]),
+            symbols=np.array(['O', 'H', 'H']),
             atom_ids=np.array([1, 2, 3]),
             atom_types=np.array([1, 2, 2]),
             positions=np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]])
@@ -35,6 +36,7 @@ class TestFrame:
             timestep=0,
             n_atoms=1,
             box_bounds=np.array([[0, 10], [0, 20], [0, 30]]),
+            symbols=np.array(['O']),
             atom_ids=np.array([1]),
             atom_types=np.array([1]),
             positions=np.array([[0, 0, 0]])
@@ -48,6 +50,7 @@ class TestFrame:
             timestep=0,
             n_atoms=5,
             box_bounds=np.array([[0, 10], [0, 10], [0, 10]]),
+            symbols=np.array(['O', 'H', 'H', 'O', 'He']),
             atom_ids=np.array([1, 2, 3, 4, 5]),
             atom_types=np.array([1, 2, 2, 1, 3]),
             positions=np.zeros((5, 3))
@@ -93,7 +96,7 @@ ITEM: ATOMS id type x y z
 2 2 1.06 0.1 0.1
 3 2 -0.14 1.03 0.1
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.lammpstrj', 
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.dump', 
                                           delete=False) as f:
             f.write(content)
             filepath = f.name
@@ -136,7 +139,7 @@ ITEM: ATOMS id type x y z
         """Test atom type mapping."""
         parser = TrajectoryParser(
             sample_trajectory_file,
-            atom_type_map={1: 'O', 2: 'H', 3: 'Si'}
+            element_to_type={'O': 1, 'H': 2, 'Si': 3}
         )
         
         assert parser.get_element_symbol(1) == 'O'
