@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Analyze hydrogen bond (H-bond) network topology from LAMMPS molecular dynamics trajectories using the **TopoX Suite** (TopoNetX, TopoModelX, TopoEmbedX).
+Analyze hydrogen bond (H-bond) network topology from molecular dynamics trajectories (LAMMPS, CP2K) using **Topological Data Analysis (TDA)** and the **TopoX Suite** (TopoNetX, TopoModelX, TopoEmbedX). Supports Betti number analysis, persistent homology, and Topological Machine Learning (TML).
 
 ## Overview
 
@@ -42,7 +42,19 @@ flowchart TD
 
 ## Installation
 
-### Prerequisites: Install uv (Recommended)
+### Prerequisites: Environment Setup
+
+#### Option A: Conda (Recommended for environment isolation)
+
+```bash
+# Create a new environment
+conda create -n topoHBNet python=3.10 -y
+
+# Activate the environment
+conda activate topoHBNet
+```
+
+#### Option B: uv (Recommended for fast package management)
 
 [uv](https://github.com/astral-sh/uv) is a fast Python package manager (10-100x faster than pip).
 
@@ -89,7 +101,11 @@ pip install -e ".[all]"
 ### Command Line
 
 ```bash
+# Basic analysis
 python run_analysis.py trajectory.lammpstrj --output results/
+
+# Analysis with Topological Machine Learning (TML)
+python example_analysis.py --trajectory trajectory.xyz --run-ml --ml-dim 16
 ```
 
 ### Python API
@@ -207,10 +223,12 @@ examples/
 | File | Description |
 |------|-------------|
 | `analysis_results.json` | Full results for each frame |
-| `statistics.json` | Summary statistics |
-| `topology_dynamics.png` | Betti numbers, H-bonds over time |
-| `hbond_statistics.png` | Distance and angle evolution |
-| `statistics_summary.png` | Property distributions |
+| `statistics_summary.json` | Summary statistics and TML parameters |
+| `betti_dynamics.png` | Betti numbers (β₀, β₁, β₂) over time |
+| `persistence_barcode.png` | TDA Persistent Homology Barcode |
+| `similarity_heatmap.png` | Inter-frame topological similarity heatmap |
+| `embedding_pca.png` | PCA projection of topological embeddings |
+| `frame_embeddings.npy` | Raw topological embedding vectors |
 
 ---
 
@@ -301,7 +319,7 @@ out = model(
 
 > **Large Trajectories**: For long trajectories, consider batch processing with `--start`, `--stop`, `--step` flags.
 
-> **GPU Acceleration**: TopoModelX uses PyTorch for GPU-accelerated topological neural networks.
+> **GPU Acceleration**: TopoModelX utilizes PyTorch for GPU-accelerated TNNs. The package automatically detects CUDA and supports high-performance GPUs (including NVIDIA RTX 5080 / Blackwell).
 
 ---
 
