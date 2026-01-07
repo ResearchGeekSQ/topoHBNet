@@ -78,17 +78,20 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.8.0+cu129.html
 ```
 
-### Step 2: Install the Package
+### Step 2: Clone and Install from Source (Recommended)
+
+First, clone the repository from GitHub:
 
 ```bash
-cd path/to/4.Topology_HBN
+git clone https://github.com/ResearchGeekSQ/topoHBNet.git
+cd topoHBNet
+```
 
-# Using uv (recommended)
-uv pip install -e .                    # Core only
-uv pip install -e ".[embedding]"       # + Cell2Vec, HOPE
-uv pip install -e ".[learning]"        # + TopoModelX
-uv pip install -e ".[persistence]"     # + gudhi
-uv pip install -e ".[all]"             # All features
+Then, install the package in editable mode to allow for development and easy updates:
+
+```bash
+# Using uv (fastest)
+uv pip install -e ".[all]"
 
 # Or using pip
 pip install -e ".[all]"
